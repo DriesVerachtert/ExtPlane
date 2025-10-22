@@ -1,0 +1,29 @@
+name: Build on Linux
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+
+      - name: Check environment
+        run: echo "QT_ROOT_DIR set to ${QT_ROOT_DIR}" && echo "Contents of bin dir:" && ls -l ${QT_ROOT_DIR}/bin
+
+      - name: Get X-Plane SDK
+        run: wget https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK300.zip && unzip *.zip && rm XPSDK300.zip
+
+      - name: Qmake
+        run: qmake
+
+      - name: Make
+        run: make
