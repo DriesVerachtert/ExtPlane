@@ -5,6 +5,7 @@
 
 class ClientDataRef;
 class ExtPlaneClient;
+Q_DECLARE_OPAQUE_POINTER(ExtPlaneClient*)
 class DataRefProvicer;
 
 /**
