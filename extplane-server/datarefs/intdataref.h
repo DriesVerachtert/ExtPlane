@@ -11,8 +11,8 @@ public:
     int value();
     void setValue(int newValue);
     virtual void updateValue(int newValue);
-    virtual QString valueString();
-    virtual void setValue(QString &newValue);
+    virtual QString valueString() override;
+    virtual void setValue(QString &newValue) override;
     size_t dataSize() override;
     void *rawData() override;
     void fromRawData(void *ptr) override;
