@@ -20,10 +20,25 @@ jobs:
         run: echo "QT_ROOT_DIR set to ${QT_ROOT_DIR}" && echo "Contents of bin dir:" && ls -l ${QT_ROOT_DIR}/bin
 
       - name: Get X-Plane SDK
-        run: wget https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK300.zip && unzip *.zip && rm XPSDK300.zip
+        run: |
+          wget https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip
+          unzip *.zip
+          rm XPSDK*.zip
+          # mv SDK ~/
+
+      - name: Install mosquitto package
+        run: |
+          brew update
+          brew install mosquitto pkg-config
 
       - name: Qmake
-        run: qmake
+        run: |
+          qmake -r XPLANE_SDK_PATH=`pwd`/SDK CONFIG+=mqtt "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED -DAPL"
 
       - name: Make
-        run: make
+        run: |
+          make
+
+      - name: Check contents of extplane-plugin
+        run: find extplane-plugin
+
