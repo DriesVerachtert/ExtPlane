@@ -1,0 +1,94 @@
+name: Build on Windows
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+
+      - name: Check environment with bash
+        shell: bash
+        run: |
+          set | grep QT
+
+      - name: Check environment with shell
+        run: set
+        shell: cmd
+
+      - name: Check environment with powershell
+        run: |
+          Get-ChildItem Env:
+        shell: powershell
+
+      - name: Get X-Plane SDK
+        shell: bash
+        run: |
+          curl -L -o XPSDK.zip https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip
+          unzip *.zip
+          rm XPSDK*.zip
+          mv SDK ~/
+
+      - name: Setup environment variables for C/C++ compiler
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install mosquitto devel package
+        shell: pwsh
+        run: |
+          vcpkg install mosquitto:x64-windows
+
+      # - name: Install Mosquitto (mosquittopp)
+      #   shell: pwsh
+      #   run: |
+      #     $installer = "$env:RUNNER_TEMP\mosquitto-installer.exe"
+      #     Invoke-WebRequest `
+      #       -Uri "https://mosquitto.org/files/binary/win64/mosquitto-2.0.22-install-windows-x64.exe" `
+      #       -OutFile $installer
+      #     & $installer /S /D=$HOME\mosquitto
+
+      - name: List contents of mosquitto dir
+        shell: bash
+        run: |
+          echo "vcpkg installdir is ${VCPKG_INSTALLATION_ROOT}"
+          ls -la ${VCPKG_INSTALLATION_ROOT}
+          echo "checking includepath: "
+          ls -l ${VCPKG_INSTALLATION_ROOT}/installed/x64-windows/include
+          echo "checking libs:"
+          ls -l ${VCPKG_INSTALLATION_ROOT}/installed/x64-windows/lib
+
+          # ls $HOME/mosquitto || echo "dir not found"
+          # find $HOME | grep -i mosquitto
+          # find $HOME/mosquitto -type f
+
+
+# qmake -r XPLANE_SDK_PATH=`pwd`/SDK CONFIG+=mqtt "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED -DIBM" "INCLUDEPATH+=${HOME}/mosquitto/devel" "LIBS+=-L${HOME}/mosquitto -L${HOME}/mosquitto/devel"
+          
+      - name: Qmake
+        shell: bash
+        run: |
+          VCPKG_UNIX=$(cygpath -u "$VCPKG_INSTALLATION_ROOT")
+          echo "VCPKG_UNIX: ${VCPKG_UNIX}"
+          export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}${VCPKG_UNIX}/installed/x64-windows/lib/pkgconfig"
+          qmake -r XPLANE_SDK_PATH=`pwd`/SDK \
+              CONFIG+=mqtt \
+              "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED -DIBM" \
+              "INCLUDEPATH+=${VCPKG_UNIX}/installed/x64-windows/include" \
+              "LIBS+=-L${VCPKG_UNIX}/installed/x64-windows/lib" \
+
+
+      - name: Make
+        run: |
+          which make
+          find . -type f | grep -i makefile
+
+          make
+
