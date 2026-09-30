@@ -15,6 +15,8 @@ jobs:
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.2"
 
       - name: Check environment
         run: echo "QT_ROOT_DIR set to ${QT_ROOT_DIR}" && echo "Contents of bin dir:" && ls -l ${QT_ROOT_DIR}/bin
