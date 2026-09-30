@@ -35,7 +35,9 @@ jobs:
 
       - name: Qmake
         run: |
-          qmake -r XPLANE_SDK_PATH=`pwd`/SDK CONFIG+=mqtt "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED -DAPL"
+          # mosquitto 2.1 headers include <cjson/cJSON.h> from the brew prefix
+          qmake -r XPLANE_SDK_PATH=`pwd`/SDK CONFIG+=mqtt "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED -DAPL" \
+              "INCLUDEPATH+=$(brew --prefix)/include"
 
       - name: Make
         run: |
