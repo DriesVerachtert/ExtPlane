@@ -1,5 +1,7 @@
 TEMPLATE = lib
 CONFIG += staticlib c++11
+# Keep the .lib in the build dir on Windows, the plugin links it from there
+win32: CONFIG -= debug_and_release
 
 include(../common.pri)
 

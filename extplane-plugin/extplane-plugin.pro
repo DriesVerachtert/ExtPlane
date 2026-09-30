@@ -29,13 +29,10 @@ CONFIG   += console warn_on shared c++11
 CONFIG   -= app_bundle
 CONFIG   -= debug_and_release
 
-CONFIG += link_pkgconfig
-PKGCONFIG += libmosquittopp
-
 TEMPLATE = lib
 
 TARGET = extplane-plugin
-QMAKE_LFLAGS += -shared
+!win32: QMAKE_LFLAGS += -shared
 
 # Use these LFLAGS to check for missing symbols:
 
@@ -49,7 +46,8 @@ QMAKE_LFLAGS += -shared
 
 
 # Link to static library
-QMAKE_LFLAGS += ../extplane-server/libextplane-server.a
+win32: LIBS += ../extplane-server/extplane-server.lib
+else: QMAKE_LFLAGS += ../extplane-server/libextplane-server.a
 
 #  -static-libgcc  <- fails on mac
 
@@ -82,7 +80,6 @@ macx {
 win32 {
     DEFINES += APL=0 IBM=1 LIN=0
     DEFINES += NOMINMAX #Qt5 bug
-    QMAKE_LFLAGS += -fPIC
     LIBS += -L$$XPLANE_SDK_PATH/Libraries/Win
 # We should test for target arch, not host arch, but this doesn't work. Fix.
 #    !contains(QMAKE_TARGET.arch, x86_64) {
@@ -113,7 +110,8 @@ CONFIG(debug, debug|release) {
 }
 
 # Copy the built library to the correct x-plane plugin directory
-QMAKE_POST_LINK += $(MKDIR) $$XPLDIR ; $(COPY_FILE) $(TARGET) $$XPLDIR/$$XPLFILE
+win32: QMAKE_POST_LINK += if not exist $$shell_path($$XPLDIR) $(MKDIR) $$shell_path($$XPLDIR) $$escape_expand(\\n\\t) $(COPY_FILE) $(TARGET) $$shell_path($$XPLDIR/$$XPLFILE)
+else: QMAKE_POST_LINK += $(MKDIR) $$XPLDIR ; $(COPY_FILE) $(TARGET) $$XPLDIR/$$XPLFILE
 
 SOURCES += main.cpp \
     xplaneplugin.cpp \
@@ -134,6 +132,16 @@ HEADERS += \
 CONFIG(mqtt) {
     message(Building with MQTT support)
     DEFINES += WITH_MQTT
+    win32 {
+        # Static mosquitto from vcpkg (triplet x64-windows-static-md) so
+        # win.xpl doesn't need extra DLLs next to it
+        DEFINES += LIBMOSQUITTO_STATIC
+        LIBS += -lmosquittopp_static -lmosquitto_static -llibssl -llibcrypto -lpthreadVC3
+        LIBS += -lws2_32 -lcrypt32 -ladvapi32 -luser32
+    } else {
+        CONFIG += link_pkgconfig
+        PKGCONFIG += libmosquittopp
+    }
     SOURCES += $$PWD/../mqttpublisher/mqttpublisher.cpp \
                $$PWD/../mqttpublisher/mqttclient.cpp
     HEADERS += $$PWD/../mqttpublisher/mqttpublisher.h \
