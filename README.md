@@ -78,9 +78,8 @@ License:
 
 This is a fat plugin - just copy "extplane" directory under X-Plane/Resources/plugins.
 
-On Windows, the Qt DLLs (Qt6Core.dll and Qt6Network.dll) must be in the
-same directory as win.xpl (extplane/64). The Windows build from GitHub
-Actions already includes them.
+The plugins built by GitHub Actions have Qt, mosquitto and OpenSSL linked in
+statically, so no other libraries need to be installed or copied.
 
 Start X-Plane. You should see ExtPlane menu entry in plugins menu.
 
@@ -172,6 +171,7 @@ building linux & windows plugins it should look like this:
 /extplane
 └── 64
     ├── lin.xpl
+    ├── mac.xpl
     └── win.xpl
 ```
 

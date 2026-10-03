@@ -10,6 +10,10 @@ SUBDIRS = extplane-server \
     clients/extplane-client-qt/democlient.pro \
     extplane-transformer
 
+# Only build the X-Plane plugin, e.g. with a minimal static Qt (only core
+# and network) that can't build the clients and transformer
+CONFIG(plugin_only): SUBDIRS = extplane-server
+
 CONFIG += ordered
 
 include(common.pri)

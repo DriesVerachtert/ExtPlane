@@ -1,0 +1,321 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Every platform builds a self-contained plugin: Qt, mosquitto and OpenSSL are
+# built as static libraries with vcpkg (settings in ci/vcpkg) and linked into
+# the .xpl file. The package job combines them into one fat plugin.
+#
+# Building Qt takes a long time, so vcpkg's installed dir is cached. The cache
+# key changes when anything in ci/vcpkg changes.
+
+jobs:
+  linux:
+    # Older Ubuntu so lin.xpl also works with older glibc versions
+    runs-on: ubuntu-22.04
+    env:
+      TRIPLET: x64-linux-extplane
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get vcpkg
+        run: |
+          git init -q vcpkg
+          git -C vcpkg fetch -q --depth 1 https://github.com/microsoft/vcpkg.git $(tr -d '\r' < ci/vcpkg/commit.txt)
+          git -C vcpkg checkout -q FETCH_HEAD
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg/installed
+          key: vcpkg-${{ env.TRIPLET }}-${{ hashFiles('ci/vcpkg/**') }}
+
+      - name: Install build tools for vcpkg
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autoconf-archive automake libtool
+
+      - name: Build Qt and mosquitto
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: |
+          read -ra PACKAGES < <(tr -d '\r' < ci/vcpkg/packages.txt)
+          ./vcpkg/vcpkg install "${PACKAGES[@]}" --triplet $TRIPLET --host-triplet=$TRIPLET --overlay-triplets=ci/vcpkg/triplets --clean-after-build
+
+      - name: Show vcpkg logs
+        if: failure()
+        run: |
+          for f in $(find vcpkg/buildtrees -name '*.log' 2>/dev/null); do echo "=== $f"; tail -n 50 "$f"; done
+
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg/installed
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: Get X-Plane SDK
+        run: |
+          wget -q https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip
+          unzip -q XPSDK411.zip
+          rm XPSDK411.zip
+
+      - name: Qmake
+        run: |
+          VCPKG_INST=$PWD/vcpkg/installed/$TRIPLET
+          $VCPKG_INST/tools/Qt6/bin/qmake -r XPLANE_SDK_PATH=$PWD/SDK \
+              CONFIG+=mqtt CONFIG+=static_deps CONFIG+=plugin_only \
+              "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED" \
+              "INCLUDEPATH+=$VCPKG_INST/include" \
+              "LIBS+=-L$VCPKG_INST/lib"
+
+      - name: Make
+        run: make -j$(nproc)
+
+      - name: Check plugin dependencies
+        run: |
+          P=extplane-plugin/extplane/64/lin.xpl
+          ldd $P
+          echo "Needs glibc $(objdump -T $P | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -n 1)"
+          if ldd $P | grep -iE 'qt|mosquitto|libssl|libcrypto'; then
+            echo "::error::lin.xpl depends on shared Qt, mosquitto or OpenSSL libraries"
+            exit 1
+          fi
+          # Only X-Plane's own functions may be unresolved
+          UNDEFINED=$(ldd -r $P 2>&1 | grep 'undefined symbol' | grep -v 'undefined symbol: XPLM' || true)
+          if [ -n "$UNDEFINED" ]; then
+            echo "$UNDEFINED"
+            echo "::error::lin.xpl has unresolved symbols"
+            exit 1
+          fi
+          for f in XPluginStart XPluginStop XPluginEnable XPluginDisable XPluginReceiveMessage; do
+            nm -D --defined-only $P | grep -qw $f || { echo "::error::lin.xpl doesn't export $f"; exit 1; }
+          done
+          EXPORTED=$(nm -D --defined-only $P | c++filt | grep -E ' (QObject|QString|QCoreApplication)::| mosquitto_| SSL_' || true)
+          if [ -n "$EXPORTED" ]; then
+            echo "$EXPORTED" | head -n 20
+            echo "::error::lin.xpl exports symbols of the static libraries"
+            exit 1
+          fi
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: extplane-plugin-linux
+          path: extplane-plugin/extplane/
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    env:
+      TRIPLET: arm64-osx-extplane
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get vcpkg
+        run: |
+          git init -q vcpkg
+          git -C vcpkg fetch -q --depth 1 https://github.com/microsoft/vcpkg.git $(tr -d '\r' < ci/vcpkg/commit.txt)
+          git -C vcpkg checkout -q FETCH_HEAD
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg/installed
+          key: vcpkg-${{ env.TRIPLET }}-${{ hashFiles('ci/vcpkg/**') }}
+
+      - name: Install build tools for vcpkg
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: brew install autoconf autoconf-archive automake libtool
+
+      - name: Build Qt and mosquitto
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: |
+          read -ra PACKAGES < <(tr -d '\r' < ci/vcpkg/packages.txt)
+          ./vcpkg/vcpkg install "${PACKAGES[@]}" --triplet $TRIPLET --host-triplet=$TRIPLET --overlay-triplets=ci/vcpkg/triplets --clean-after-build
+
+      - name: Show vcpkg logs
+        if: failure()
+        run: |
+          for f in $(find vcpkg/buildtrees -name '*.log' 2>/dev/null); do echo "=== $f"; tail -n 50 "$f"; done
+
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg/installed
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: Get X-Plane SDK
+        run: |
+          wget -q https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip
+          unzip -q XPSDK411.zip
+          rm XPSDK411.zip
+
+      - name: Qmake
+        run: |
+          VCPKG_INST=$PWD/vcpkg/installed/$TRIPLET
+          $VCPKG_INST/tools/Qt6/bin/qmake -r XPLANE_SDK_PATH=$PWD/SDK \
+              CONFIG+=mqtt CONFIG+=static_deps CONFIG+=plugin_only \
+              "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED" \
+              "INCLUDEPATH+=$VCPKG_INST/include" \
+              "LIBS+=-L$VCPKG_INST/lib"
+
+      - name: Make
+        run: make -j$(sysctl -n hw.ncpu)
+
+      - name: Check plugin dependencies
+        run: |
+          P=extplane-plugin/extplane/64/mac.xpl
+          otool -L $P
+          otool -l $P | grep -A4 LC_BUILD_VERSION
+          for f in XPluginStart XPluginStop XPluginEnable XPluginDisable XPluginReceiveMessage; do
+            nm -gU $P | grep -qw _$f || { echo "::error::mac.xpl doesn't export $f"; exit 1; }
+          done
+          if otool -L $P | tail -n +2 | grep -iE 'qt|mosquitto|ssl|crypto|/opt/|/usr/local/'; then
+            echo "::error::mac.xpl depends on shared Qt, mosquitto or OpenSSL libraries"
+            exit 1
+          fi
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: extplane-plugin-macos
+          path: extplane-plugin/extplane/
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    env:
+      TRIPLET: x64-windows-extplane
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check environment with bash
+        shell: bash
+        run: |
+          set | grep QT || true
+
+      - name: Check environment with shell
+        run: set
+        shell: cmd
+
+      - name: Check environment with powershell
+        run: |
+          Get-ChildItem Env:
+        shell: powershell
+
+      - name: Setup environment variables for C/C++ compiler
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Get vcpkg
+        shell: bash
+        run: |
+          git init -q vcpkg
+          git -C vcpkg fetch -q --depth 1 https://github.com/microsoft/vcpkg.git $(tr -d '\r' < ci/vcpkg/commit.txt)
+          git -C vcpkg checkout -q FETCH_HEAD
+          cmd //c "vcpkg\\bootstrap-vcpkg.bat -disableMetrics"
+
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg/installed
+          key: vcpkg-${{ env.TRIPLET }}-${{ hashFiles('ci/vcpkg/**') }}
+
+      - name: Build Qt and mosquitto
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          read -ra PACKAGES < <(tr -d '\r' < ci/vcpkg/packages.txt)
+          # Short build dir, Qt hits the Windows path length limit otherwise
+          ./vcpkg/vcpkg.exe install "${PACKAGES[@]}" --triplet $TRIPLET --host-triplet=$TRIPLET --overlay-triplets=ci/vcpkg/triplets --clean-after-build --x-buildtrees-root=C:/b
+
+      - name: Show vcpkg logs
+        if: failure()
+        shell: bash
+        run: |
+          for f in $(find /c/b -name '*.log' 2>/dev/null); do echo "=== $f"; tail -n 50 "$f"; done
+
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg/installed
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: List contents of vcpkg dir
+        shell: bash
+        run: |
+          ls -l vcpkg/installed/${TRIPLET}/include
+          ls -l vcpkg/installed/${TRIPLET}/lib
+
+      - name: Get X-Plane SDK
+        shell: bash
+        run: |
+          curl -sL -o XPSDK411.zip https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip
+          unzip -q XPSDK411.zip
+          rm XPSDK411.zip
+
+      - name: Qmake
+        shell: bash
+        run: |
+          ROOT=$(cygpath -m "$PWD")
+          VCPKG_INST=$ROOT/vcpkg/installed/$TRIPLET
+          $VCPKG_INST/tools/Qt6/bin/qmake.exe -r XPLANE_SDK_PATH=$ROOT/SDK \
+              CONFIG+=mqtt CONFIG+=static_deps CONFIG+=plugin_only \
+              "QMAKE_CXXFLAGS+=-DXPLM_DEPRECATED" \
+              "INCLUDEPATH+=$VCPKG_INST/include" \
+              "LIBS+=-L$VCPKG_INST/lib"
+
+      - name: Make
+        shell: cmd
+        run: nmake
+
+      - name: Check plugin dependencies
+        shell: bash
+        run: |
+          dumpbin -nologo -dependents extplane-plugin/extplane/64/win.xpl | tee deps.txt
+          if grep -iE 'qt6|mosquitto|libssl|libcrypto|pthread' deps.txt; then
+            echo "::error::win.xpl depends on Qt, mosquitto, OpenSSL or pthread DLLs"
+            exit 1
+          fi
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: extplane-plugin-windows
+          path: extplane-plugin/extplane/
+          if-no-files-found: error
+
+  package:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download plugins
+        uses: actions/download-artifact@v4
+        with:
+          pattern: extplane-plugin-*
+          path: fat/extplane
+          merge-multiple: true
+
+      - name: Show fat plugin
+        run: find fat -type f -exec ls -l {} \;
+
+      - name: Upload fat plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: extplane-plugin
+          path: fat/
+          if-no-files-found: error
