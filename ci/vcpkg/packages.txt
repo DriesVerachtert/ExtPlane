@@ -1,0 +1,1 @@
+qtbase[core,network,thread,doubleconversion,pcre2] mosquitto
