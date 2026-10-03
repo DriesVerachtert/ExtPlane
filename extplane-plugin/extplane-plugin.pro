@@ -57,6 +57,9 @@ unix:!macx {
     QMAKE_CXXFLAGS += -rdynamic -nodefaultlibs -undefined_warning
     XPLDIR = extplane/64
     XPLFILE = lin.xpl
+    # Don't export symbols of static libraries (Qt, mosquitto, OpenSSL),
+    # they could clash with other plugins
+    CONFIG(static_deps): QMAKE_LFLAGS += -Wl,--exclude-libs,ALL
 }
 
 macx {
@@ -73,7 +76,7 @@ macx {
      QMAKE_LFLAGS += -F$$XPLANE_SDK_PATH/Libraries/Mac
      QMAKE_CXXFLAGS += -fPIC
      LIBS += -framework XPLM
-     XPLDIR = extplane
+     XPLDIR = extplane/64
      XPLFILE = mac.xpl
 }
 
@@ -132,12 +135,24 @@ HEADERS += \
 CONFIG(mqtt) {
     message(Building with MQTT support)
     DEFINES += WITH_MQTT
-    win32 {
-        # Static mosquitto from vcpkg (triplet x64-windows-static-md) so
-        # win.xpl doesn't need extra DLLs next to it
+    CONFIG(static_deps) {
+        # Static mosquitto and OpenSSL from vcpkg (see ci/vcpkg) so the
+        # plugin doesn't need extra libraries next to it
         DEFINES += LIBMOSQUITTO_STATIC
-        LIBS += -lmosquittopp_static -lmosquitto_static -llibssl -llibcrypto -lpthreadVC3
-        LIBS += -lws2_32 -lcrypt32 -ladvapi32 -luser32
+        LIBS += -lmosquittopp_static -lmosquitto_static
+        win32 {
+            LIBS += -llibssl -llibcrypto -lpthreadVC3
+            LIBS += -lws2_32 -lcrypt32 -ladvapi32 -luser32
+        } else {
+            LIBS += -lssl -lcrypto -lpthread
+            # Static QtNetwork uses the resolver library on macOS
+            macx: LIBS += -lresolv
+            # Only export the XPlugin* functions (PLUGIN_API), not the
+            # inline Qt functions compiled into our own code
+            QMAKE_CXXFLAGS += -fvisibility=hidden -fvisibility-inlines-hidden
+        }
+    } else:win32 {
+        LIBS += -lmosquittopp -lmosquitto
     } else {
         CONFIG += link_pkgconfig
         PKGCONFIG += libmosquittopp
