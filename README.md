@@ -3,11 +3,12 @@
 A plugin for X-Plane and other simulators that allows commanding the simulation from
 external programs through an easy-to-use TCP protocol.
 
-Current version 1003 (set in tcpserver.h, if you make changes!)
+Protocol version: EXTPLANE_VERSION in protocoldefs.h (bump it if you change the
+protocol!). Releases have their own version numbers, see Releasing below.
 
 ## Supported simulators ##
 
-* X-Plane 9, 10 & 11 - native support. X-Plane 11 currently only tested.
+* X-Plane 9, 10, 11 & 12 - native support. Tested with X-Plane 12 on macOS.
 * Condor soaring simulator 1 and 2
 * FlightGear - basic support via Transformer (see later)
 
@@ -69,30 +70,54 @@ License:
 
 ### ExtPlane Plugin ###
 
-* Up to date Linux & windows versions
-    * GitHub releases page: https://github.com/vranki/ExtPlane/releases/
+* Linux, macOS (Apple Silicon) & Windows versions
+    * GitHub releases page: https://github.com/DriesVerachtert/ExtPlane/releases/
+* Older upstream versions: https://github.com/vranki/ExtPlane/releases/
 * Older version: Linux, Windows, OS-X (32bit & 64bit), 8MB
     * [https://github.com/dankrusi/ExtPlane-Panel/releases/tag/v0.1](https://github.com/dankrusi/ExtPlane-Panel/releases/tag/v0.1)
 
 ## Installing ##
 
-This is a fat plugin - just copy "extplane" directory under X-Plane/Resources/plugins.
+This is a fat plugin - unzip the release and copy the "extplane" directory
+under X-Plane/Resources/plugins. For example, for X-Plane 12 installed with
+Steam on macOS:
 
-The plugins built by GitHub Actions have Qt, mosquitto and OpenSSL linked in
-statically, so no other libraries need to be installed or copied.
+```bash
+cp -R extplane ~/Library/Application\ Support/Steam/steamapps/common/X-Plane\ 12/Resources/plugins/
+```
+
+On macOS, files downloaded from the internet are quarantined and X-Plane
+can't load the plugin until you remove the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine ~/Library/Application\ Support/Steam/steamapps/common/X-Plane\ 12/Resources/plugins/extplane
+```
+
+The release plugins have Qt, mosquitto and OpenSSL linked in statically, so no
+other libraries need to be installed or copied.
 
 Start X-Plane. You should see ExtPlane menu entry in plugins menu.
 
 ## Building ##
 
-ExtPlane uses the Qt Framework for cross-platform compatibility. Before building you'll need to setup Qt 5 or greater to compile. You'll
-also need to check out the X-Plane SDK (http://www.xsquawkbox.net/xpsdk/mediawiki/Download) to the directory next to the ExtPlane directory.
-The X-Plane SDK can be either at ~/SDK or ../SDK or ../XPlaneSDK relative to the ExtPlane directory.
+ExtPlane uses the Qt Framework for cross-platform compatibility. Before building you'll need to setup Qt 6 to compile. You'll
+also need the X-Plane SDK (https://developer.x-plane.com/sdk/plugin-sdk-downloads/), either at ~/SDK or ../XPlaneSDK
+relative to the ExtPlane directory, or pass its location to qmake with XPLANE_SDK_PATH=/path/to/SDK.
 
 The requirements for ExtPlane are as follows:
 * C++ Toolchain
-* Qt Framework 5+
-* X-Plane SDK 3.0+
+* Qt Framework 6
+* X-Plane SDK 3.0+ (the GitHub Actions builds use 4.1.1)
+
+### GitHub Actions ###
+
+.github/workflows/build.yml builds self-contained plugins for Linux, macOS and
+Windows: Qt, mosquitto and OpenSSL are built as static libraries with vcpkg
+(settings in ci/vcpkg) and linked into the plugin. Useful qmake options:
+
+* CONFIG+=mqtt - build with the MQTT interface (see MQTT.md)
+* CONFIG+=static_deps - link mosquitto and OpenSSL statically
+* CONFIG+=plugin_only - only build the plugin, not the clients and transformer
 
 ### Docker ###
 
@@ -185,6 +210,17 @@ cp -R extplane /path/to/xplane/Resources/plugins
 
 This is possible using mxe cross-compilation tool. See file
 scripts/cross-compile-win64-from-lin.sh for instructions.
+
+## Releasing ##
+
+Releases use semantic versioning (v0.0.1, v0.1.0, ...). Pushing a version
+tag builds the plugins and publishes a GitHub release with the fat plugin as
+extplane-plugin-vX.Y.Z.zip:
+
+```bash
+git tag v0.0.1
+git push origin v0.0.1
+```
 
 ## Test Session ##
 
